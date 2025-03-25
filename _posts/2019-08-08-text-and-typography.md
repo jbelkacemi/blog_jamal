@@ -1,200 +1,127 @@
 ---
-title: Text and Typography
-description: Examples of text, typography, math equations, diagrams, flowcharts, pictures, videos, and more.
-author: cotes
-date: 2019-08-08 11:33:00 +0800
-categories: [Blogging, Demo]
-tags: [typography]
+title: Integrar una Báscula Bluetooth Swisshome en Home Assistant con ESPHome
+description: Aprende cómo integrar tu báscula Bluetooth Swisshome con Home Assistant usando un ESP32 y ESPHome, para hacer seguimiento de tu peso y métricas corporales sin depender de aplicaciones externas.
+author: Jamal
+date: 2025-03-23 11:33:00 +0800
+categories: [Home Assistant, Automatización del Hogar, ESP32]
+tags: [Bluetooth, Báscula, ESPHome, Home Assistant, Automatización, Tecnología]
 pin: true
-math: true
-mermaid: true
+
 image:
-  path: /commons/devices-mockup.png
-  lqip: data:image/webp;base64,UklGRpoAAABXRUJQVlA4WAoAAAAQAAAADwAABwAAQUxQSDIAAAARL0AmbZurmr57yyIiqE8oiG0bejIYEQTgqiDA9vqnsUSI6H+oAERp2HZ65qP/VIAWAFZQOCBCAAAA8AEAnQEqEAAIAAVAfCWkAALp8sF8rgRgAP7o9FDvMCkMde9PK7euH5M1m6VWoDXf2FkP3BqV0ZYbO6NA/VFIAAAA
-  alt: Responsive rendering of Chirpy theme on multiple devices.
+  path: /assets/images/bascula-bluetooth-swisshome.png
+  alt: Integración de una báscula Bluetooth Swisshome con ESP32 y Home Assistant.
 ---
 
-## Headings
+# Cómo integrar una báscula Bluetooth Swisshome en Home Assistant con ESPHome
 
-<!-- markdownlint-capture -->
-<!-- markdownlint-disable -->
-# H1 — heading
-{: .mt-4 .mb-0 }
+¡Hola a todos!
 
-## H2 — heading
-{: data-toc-skip='' .mt-4 .mb-0 }
+Hace unos meses, compré una báscula de baño marca Swisshome, una opción económica y genérica que me costó apenas 10 €. Aunque al principio solo la usaba para pesarnos ocasionalmente, un día revisé el manual (algo que admito no suelo hacer) y me di cuenta de que esta báscula tenía Bluetooth integrado.
 
-### H3 — heading
-{: data-toc-skip='' .mt-4 .mb-0 }
+Esto despertó mi curiosidad, ya que no me gusta instalar muchas aplicaciones en mi móvil, y pensé: ¿por qué no integrarla directamente con Home Assistant? De esta forma podría llevar un seguimiento del peso de toda mi familia sin depender de aplicaciones de terceros. Además, como entusiasta de la automatización y la tecnología, me pareció un desafío interesante.
 
-#### H4 — heading
-{: data-toc-skip='' .mt-4 }
-<!-- markdownlint-restore -->
+En este artículo te mostraré cómo logré esta integración utilizando un ESP32 y ESPHome. También compartiré los pasos para procesar los datos emitidos por la báscula, que incluyen tanto el peso como la impedancia corporal. Si tienes una báscula Bluetooth similar, este tutorial puede ser útil para ti.
 
-## Paragraph
+## ¿Por qué integrar una báscula Bluetooth con Home Assistant?
 
-Quisque egestas convallis ipsum, ut sollicitudin risus tincidunt a. Maecenas interdum malesuada egestas. Duis consectetur porta risus, sit amet vulputate urna facilisis ac. Phasellus semper dui non purus ultrices sodales. Aliquam ante lorem, ornare a feugiat ac, finibus nec mauris. Vivamus ut tristique nisi. Sed vel leo vulputate, efficitur risus non, posuere mi. Nullam tincidunt bibendum rutrum. Proin commodo ornare sapien. Vivamus interdum diam sed sapien blandit, sit amet aliquam risus mattis. Nullam arcu turpis, mollis quis laoreet at, placerat id nibh. Suspendisse venenatis eros eros.
+Si estás familiarizado con Home Assistant, sabes lo poderosa que es esta plataforma de automatización del hogar. Integrar dispositivos como una báscula Bluetooth tiene varias ventajas:
 
-## Lists
+- **Seguimiento a largo plazo**: Puedes registrar el peso e incluso métricas corporales como la impedancia (útil para calcular la composición corporal).
+- **Notificaciones**: Configura alertas para mantenerte al tanto de los cambios en tu peso o el de tu familia.
+- **Independencia de aplicaciones externas**: Muchas básculas Bluetooth requieren apps específicas que recopilan tus datos. Con esta integración, tienes control total sobre tu información.
+- **Automatizaciones personalizadas**: Por ejemplo, enviar un resumen semanal de tus progresos o activar recordatorios si detecta un cambio drástico en el peso.
 
-### Ordered list
+## Paso 1: Descubriendo las capacidades de la báscula Swisshome
 
-1. Firstly
-2. Secondly
-3. Thirdly
+Al analizar las emisiones Bluetooth de la báscula, descubrí que funcionaba mediante broadcast, lo que significa que no es necesario establecer una conexión activa. En cambio, los datos se transmiten de forma abierta para que cualquier dispositivo pueda capturarlos, siempre que sepa cómo decodificarlos.
 
-### Unordered list
+Esta báscula emite dos tipos de datos:
 
-- Chapter
-  - Section
-    - Paragraph
+- **Peso**: Se transmite en paquetes identificados por el tipo 0xAD. Incluye el peso en gramos y un estado que confirma si la medición está lista.
+- **Impedancia corporal**: Se transmite en un paquete diferente (0xA6) y aparece solo después de que el peso ha sido confirmado. La impedancia es clave para calcular métricas como el porcentaje de grasa corporal.
 
-### ToDo list
+Para obtener esta información, utilicé herramientas como nRF Connect (en mi móvil) para capturar los paquetes Bluetooth y Wireshark para analizarlos en detalle. Fue fascinante ver cómo los datos crudos cobraban sentido tras un poco de decodificación.
 
-- [ ] Job
-  - [x] Step 1
-  - [x] Step 2
-  - [ ] Step 3
+## Paso 2: Decodificar los datos Bluetooth
 
-### Description list
+Los datos transmitidos por la báscula están cifrados mediante un byte XOR basado en el ID del fabricante. Esto significa que para interpretarlos correctamente, primero debemos aplicar una operación XOR a los bytes relevantes y luego validar el checksum.
 
-Sun
-: the star around which the earth orbits
+### Peso
 
-Moon
-: the natural satellite of the earth, visible by reflected light from the sun
+El peso se encuentra codificado en los primeros cuatro bytes del paquete 0xAD. Después de decodificarlo, se convierte a kilogramos dividiendo el valor por 1000.
 
-## Block Quote
+### Impedancia
 
-> This line shows the _block quote_.
+La impedancia se transmite en los dos primeros bytes del paquete 0xA6. Este valor se procesa para obtener el dato en ohmios, que es esencial para estimar la composición corporal.
 
-## Prompts
+## Paso 3: Configuración del ESP32 con ESPHome
 
-<!-- markdownlint-capture -->
-<!-- markdownlint-disable -->
-> An example showing the `tip` type prompt.
-{: .prompt-tip }
+El ESP32 es una herramienta increíble para proyectos Bluetooth como este. Es barato, fácil de usar y perfectamente compatible con ESPHome, lo que simplifica su integración con Home Assistant.
 
-> An example showing the `info` type prompt.
-{: .prompt-info }
+A continuación, te comparto el código completo que utilicé para configurar el ESP32:
 
-> An example showing the `warning` type prompt.
-{: .prompt-warning }
+```yaml
+esphome:
+  name: bascula_bluetooth
+  platform: ESP32
+  board: esp32dev
 
-> An example showing the `danger` type prompt.
-{: .prompt-danger }
-<!-- markdownlint-restore -->
+esp32_ble_tracker:
+  scan_parameters:
+    interval: 1100ms
+    window: 1100ms
+    active: true
+  on_ble_advertise:
+    - mac_address:
+        - A0:91:63:4B:FB:C0  # Dirección MAC de la báscula
+      then:
+        - lambda: |-
+            const uint16_t company_id = 0xA0AC;
+            int xor_key = company_id >> 8;
+            for (auto data : x.get_manufacturer_datas()) {
+              if (data.data.size() >= 12) {
+                std::vector<uint8_t> buf(6);
+                for (int i = 0; i < 6; i++) {
+                  buf[i] = data.data[i + 6] ^ xor_key;
+                }
+                int chk = 0;
+                for (int i = 0; i < 5; i++) {
+                  chk += buf[i];
+                }
+                if ((chk & 0x1F) != (buf[5] & 0x1F)) return;
 
-## Tables
+                uint8_t packet_type = buf[4];
+                if (packet_type == 0xAD) {  // Peso
+                  int grams = buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24);
+                  float weight_kg = grams / 1000.0;
+                  id(weight_sensor).publish_state(weight_kg);
+                } else if (packet_type == 0xA6) {  // Impedancia
+                  int fat_raw = buf[0] | (buf[1] << 8);
+                  float impedancia = fat_raw / 10.0;
+                  id(body_impedancia_sensor).publish_state(impedancia);
+                }
+              }
+            }
 
-| Company                      | Contact          | Country |
-| :--------------------------- | :--------------- | ------: |
-| Alfreds Futterkiste          | Maria Anders     | Germany |
-| Island Trading               | Helen Bennett    |      UK |
-| Magazzini Alimentari Riuniti | Giovanni Rovelli |   Italy |
+sensor:
+  - platform: template
+    name: "Peso Báscula"
+    id: weight_sensor
+    unit_of_measurement: "kg"
+    accuracy_decimals: 2
+    icon: "mdi:weight-kilogram"
 
-## Links
-
-<http://127.0.0.1:4000>
-
-## Footnote
-
-Click the hook will locate the footnote[^footnote], and here is another footnote[^fn-nth-2].
-
-## Inline code
-
-This is an example of `Inline Code`.
-
-## Filepath
-
-Here is the `/path/to/the/file.extend`{: .filepath}.
-
-## Code blocks
-
-### Common
-
-```text
-This is a common code snippet, without syntax highlight and line number.
+  - platform: template
+    name: "Impedancia (Z)"
+    id: body_impedancia_sensor
+    unit_of_measurement: "Ω"
+    accuracy_decimals: 1
+    icon: "mdi:scale-bathroom"
 ```
+## Paso 4: Integración con Home Assistant
+Una vez configurado el ESP32, Home Assistant detecta automáticamente los datos. Creé sensores personalizados para mostrar tanto el peso como la impedancia. También añadí automatizaciones, como notificaciones al registrar un nuevo peso o alertas cuando detecte valores fuera de lo esperado.
 
-### Specific Language
+## Conclusión
+Este proyecto me permitió aprovechar al máximo una báscula económica y genérica, transformándola en una herramienta útil y completamente integrada en mi sistema domótico. Además, me ayudó a entender mejor el funcionamiento de las emisiones Bluetooth y a trabajar con ESPHome para procesarlas.
 
-```bash
-if [ $? -ne 0 ]; then
-  echo "The command was not successful.";
-  #do the needful / exit
-fi;
-```
-
-### Specific filename
-
-```sass
-@import
-  "colors/light-typography",
-  "colors/dark-typography";
-```
-{: file='_sass/jekyll-theme-chirpy.scss'}
-
-## Mathematics
-
-The mathematics powered by [**MathJax**](https://www.mathjax.org/):
-
-$$
-\begin{equation}
-  \sum_{n=1}^\infty 1/n^2 = \frac{\pi^2}{6}
-  \label{eq:series}
-\end{equation}
-$$
-
-We can reference the equation as \eqref{eq:series}.
-
-When $a \ne 0$, there are two solutions to $ax^2 + bx + c = 0$ and they are
-
-$$ x = {-b \pm \sqrt{b^2-4ac} \over 2a} $$
-
-## Mermaid SVG
-
-```mermaid
- gantt
-  title  Adding GANTT diagram functionality to mermaid
-  apple :a, 2017-07-20, 1w
-  banana :crit, b, 2017-07-23, 1d
-  cherry :active, c, after b a, 1d
-```
-
-## Images
-
-### Default (with caption)
-
-![Desktop View](/posts/20190808/mockup.png){: width="972" height="589" }
-_Full screen width and center alignment_
-
-### Left aligned
-
-![Desktop View](/posts/20190808/mockup.png){: width="972" height="589" .w-75 .normal}
-
-### Float to left
-
-![Desktop View](/posts/20190808/mockup.png){: width="972" height="589" .w-50 .left}
-Praesent maximus aliquam sapien. Sed vel neque in dolor pulvinar auctor. Maecenas pharetra, sem sit amet interdum posuere, tellus lacus eleifend magna, ac lobortis felis ipsum id sapien. Proin ornare rutrum metus, ac convallis diam volutpat sit amet. Phasellus volutpat, elit sit amet tincidunt mollis, felis mi scelerisque mauris, ut facilisis leo magna accumsan sapien. In rutrum vehicula nisl eget tempor. Nullam maximus ullamcorper libero non maximus. Integer ultricies velit id convallis varius. Praesent eu nisl eu urna finibus ultrices id nec ex. Mauris ac mattis quam. Fusce aliquam est nec sapien bibendum, vitae malesuada ligula condimentum.
-
-### Float to right
-
-![Desktop View](/posts/20190808/mockup.png){: width="972" height="589" .w-50 .right}
-Praesent maximus aliquam sapien. Sed vel neque in dolor pulvinar auctor. Maecenas pharetra, sem sit amet interdum posuere, tellus lacus eleifend magna, ac lobortis felis ipsum id sapien. Proin ornare rutrum metus, ac convallis diam volutpat sit amet. Phasellus volutpat, elit sit amet tincidunt mollis, felis mi scelerisque mauris, ut facilisis leo magna accumsan sapien. In rutrum vehicula nisl eget tempor. Nullam maximus ullamcorper libero non maximus. Integer ultricies velit id convallis varius. Praesent eu nisl eu urna finibus ultrices id nec ex. Mauris ac mattis quam. Fusce aliquam est nec sapien bibendum, vitae malesuada ligula condimentum.
-
-### Dark/Light mode & Shadow
-
-The image below will toggle dark/light mode based on theme preference, notice it has shadows.
-
-![light mode only](/posts/20190808/devtools-light.png){: .light .w-75 .shadow .rounded-10 w='1212' h='668' }
-![dark mode only](/posts/20190808/devtools-dark.png){: .dark .w-75 .shadow .rounded-10 w='1212' h='668' }
-
-## Video
-
-{% include embed/youtube.html id='Balreaj8Yqs' %}
-
-## Reverse Footnote
-
-[^footnote]: The footnote source
-[^fn-nth-2]: The 2nd footnote source
+Si tienes una báscula Bluetooth y te interesa un proyecto similar, ¡anímate a intentarlo! Y si tienes preguntas o ideas para mejorar este tutorial, puedes enviarmo un correo al info@belkacemi.es.
